@@ -10,7 +10,7 @@ from homeassistant.components.sensor import (
     SensorEntityDescription,
     SensorStateClass,
 )
-from homeassistant.const import PERCENTAGE
+from homeassistant.const import PERCENTAGE, EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
@@ -42,6 +42,12 @@ DESCRIPTIONS: tuple[SensorEntityDescription, ...] = (
     SensorEntityDescription(
         key="last_snapshot", translation_key="last_snapshot", device_class=SensorDeviceClass.TIMESTAMP
     ),
+    SensorEntityDescription(
+        key="models_version",
+        translation_key="models_version",
+        icon="mdi:package-variant",
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
 )
 
 
@@ -68,4 +74,24 @@ class BabyCamSensor(BabyCamEntity, SensorEntity):
                 return round(s.cry_score * 100, 1)
             case "last_snapshot":
                 return s.last_snapshot
+            case "models_version":
+                return s.models_version or "manual"
         return None
+
+    @property
+    def extra_state_attributes(self) -> dict | None:
+        if self._key != "models_version":
+            return None
+        s = self.state_data
+        return {
+            "download_mode": s.model_download_mode,
+            "available_version": s.models_available_version,
+            "update_available": bool(
+                s.models_available_version and s.models_available_version != s.models_version
+            ),
+            "downloading": s.models_downloading,
+            "last_check": s.models_last_check,
+            "error": s.models_error,
+            "presence_model_ready": s.presence_model_ready,
+            "cry_model_ready": s.cry_model_ready,
+        }

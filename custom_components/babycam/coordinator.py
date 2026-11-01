@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
+import contextlib
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 import logging
@@ -14,6 +16,7 @@ from homeassistant.components.ffmpeg import get_ffmpeg_manager
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.dispatcher import async_dispatcher_send
+from homeassistant.helpers.event import async_call_later, async_track_time_interval
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.util import dt as dt_util
 
@@ -28,6 +31,8 @@ from .const import (
     CONF_CRY_THRESHOLD,
     CONF_DETECTION_THRESHOLD,
     CONF_MEDIA_PLAYERS,
+    CONF_MODEL_DOWNLOAD,
+    CONF_MODEL_MANIFEST_URL,
     CONF_NOTIFY_SERVICES,
     CONF_PRESENCE_MODEL,
     CONF_ROI,
@@ -38,6 +43,8 @@ from .const import (
     DEFAULT_CRY_MODEL,
     DEFAULT_CRY_THRESHOLD,
     DEFAULT_DETECTION_THRESHOLD,
+    DEFAULT_MODEL_DOWNLOAD,
+    DEFAULT_MODEL_MANIFEST_URL,
     DEFAULT_PRESENCE_MODEL,
     DEFAULT_ROI,
     DEFAULT_SNAPSHOT_INTERVAL,
@@ -46,8 +53,13 @@ from .const import (
     EVENT_BABY_DETECTED,
     EVENT_CONNECTION_LOST,
     EVENT_CRY_DETECTED,
+    EVENT_MODELS_UPDATED,
     MODE_HIGH,
     MODE_LOW,
+    MODEL_DOWNLOAD_AUTO,
+    MODEL_DOWNLOAD_OFF,
+    MODEL_DOWNLOAD_ONCE,
+    MODEL_UPDATE_CHECK_INTERVAL_HOURS,
     MODELS_SUBDIR,
     MONITOR_AUTO,
     MONITOR_MANUAL,
@@ -59,6 +71,7 @@ from .const import (
 )
 from .cry_detector import CryClassifier, CryMonitor
 from .detector import PresenceDetector, PresenceResult, parse_roi
+from .model_downloader import DownloadResult, ModelDownloader, ModelDownloadError
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -87,6 +100,12 @@ class BabyCamData:
     presence_model_ready: bool = False
     cry_model_ready: bool = False
     detections: list[dict[str, Any]] = field(default_factory=list)
+    model_download_mode: str = DEFAULT_MODEL_DOWNLOAD
+    models_version: str | None = None
+    models_available_version: str | None = None
+    models_downloading: bool = False
+    models_last_check: datetime | None = None
+    models_error: str | None = None
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -108,6 +127,12 @@ class BabyCamData:
             "presence_model_ready": self.presence_model_ready,
             "cry_model_ready": self.cry_model_ready,
             "detections": self.detections,
+            "model_download_mode": self.model_download_mode,
+            "models_version": self.models_version,
+            "models_available_version": self.models_available_version,
+            "models_downloading": self.models_downloading,
+            "models_last_check": self.models_last_check.isoformat() if self.models_last_check else None,
+            "models_error": self.models_error,
         }
 
 
@@ -137,6 +162,11 @@ class BabyCamCoordinator(DataUpdateCoordinator[BabyCamData]):
         self._presence: PresenceDetector | None = None
         self._cry_monitor: CryMonitor | None = None
         self._cry_classifier: CryClassifier | None = None
+        self._downloader: ModelDownloader | None = None
+        self._download_lock = asyncio.Lock()
+        self._unsub_model_check: Callable[[], None] | None = None
+        self._unsub_model_initial: Callable[[], None] | None = None
+        self._model_download_config: tuple[str, str] | None = None
         self.apply_options()
 
     # ------------------------------------------------------------------ options
@@ -192,7 +222,127 @@ class BabyCamCoordinator(DataUpdateCoordinator[BabyCamData]):
             else:
                 self._set_crying(False)
                 self.hass.async_create_task(self._stop_cry_monitor())
+
+        self._apply_model_download_options()
         self._notify()
+
+    # ----------------------------------------------------------- model download
+    @callback
+    def _apply_model_download_options(self) -> None:
+        mode = self.opt(CONF_MODEL_DOWNLOAD, DEFAULT_MODEL_DOWNLOAD)
+        url = self.opt(CONF_MODEL_MANIFEST_URL, DEFAULT_MODEL_MANIFEST_URL)
+        self.state.model_download_mode = mode
+        if self._downloader is None or self._downloader.manifest_url != url:
+            self._downloader = ModelDownloader(self.hass, self.models_dir, url)
+            self.hass.async_create_task(self._async_load_installed_version())
+
+        # Unrelated option changes (e.g. stream mode) must not re-trigger a check.
+        if self._model_download_config == (mode, url):
+            return
+        self._model_download_config = (mode, url)
+
+        self._cancel_model_schedule()
+        if mode == MODEL_DOWNLOAD_OFF:
+            return
+        # Once: the scheduled check bails out if both models are already present.
+        self._unsub_model_initial = async_call_later(self.hass, 5, self._scheduled_model_check)
+        if mode == MODEL_DOWNLOAD_AUTO:
+            self._unsub_model_check = async_track_time_interval(
+                self.hass, self._scheduled_model_check, timedelta(hours=MODEL_UPDATE_CHECK_INTERVAL_HOURS)
+            )
+
+    async def _async_load_installed_version(self) -> None:
+        assert self._downloader is not None
+        self.state.models_version = await self.hass.async_add_executor_job(self._downloader.installed_version)
+        self._notify()
+
+    @callback
+    def _cancel_model_schedule(self) -> None:
+        for attr in ("_unsub_model_check", "_unsub_model_initial"):
+            unsub = getattr(self, attr)
+            if unsub is not None:
+                unsub()
+                setattr(self, attr, None)
+
+    async def _scheduled_model_check(self, _now: datetime | None = None) -> None:
+        self._unsub_model_initial = None
+        mode = self.state.model_download_mode
+        if mode == MODEL_DOWNLOAD_OFF:
+            return
+        if mode == MODEL_DOWNLOAD_ONCE and self.state.presence_model_ready and self.state.cry_model_ready:
+            return
+        with contextlib.suppress(ModelDownloadError):  # already recorded in state.models_error
+            await self.async_download_models()
+
+    async def async_check_model_update(self) -> bool:
+        """Fetch the manifest and report whether an update is available (no download)."""
+        assert self._downloader is not None
+        try:
+            manifest, needs_update = await self._downloader.async_check_update()
+        except ModelDownloadError as err:
+            self.state.models_error = str(err)
+            self._notify()
+            raise
+        self.state.models_available_version = manifest.version
+        self.state.models_last_check = dt_util.utcnow()
+        self.state.models_error = None
+        self._notify()
+        return needs_update
+
+    async def async_download_models(self, force: bool = False) -> DownloadResult | None:
+        """Download missing/outdated models (used by the service, button, panel and scheduler)."""
+        assert self._downloader is not None
+        if self._download_lock.locked():
+            return None
+        async with self._download_lock:
+            self.state.models_downloading = True
+            self.state.models_error = None
+            self._notify()
+            try:
+                result = await self._downloader.async_update(force=force)
+            except ModelDownloadError as err:
+                _LOGGER.warning("Model download failed: %s", err)
+                self.state.models_error = str(err)
+                raise
+            finally:
+                self.state.models_downloading = False
+                self.state.models_last_check = dt_util.utcnow()
+                self._notify()
+
+        self.state.models_version = result.version
+        self.state.models_available_version = result.version
+        if result.updated:
+            _LOGGER.info("Models updated to %s: %s", result.version, ", ".join(result.updated))
+            self.hass.bus.async_fire(
+                EVENT_MODELS_UPDATED,
+                {"entry_id": self.entry.entry_id, "version": result.version, "updated": result.updated},
+            )
+            await self._reload_models(result)
+        self._notify()
+        return result
+
+    async def _reload_models(self, result: DownloadResult) -> None:
+        """Point the detectors at the downloaded files and drop cached sessions."""
+        presence_file = result.files.get("presence")
+        cry_file = result.files.get("cry")
+        if presence_file and self._presence is not None:
+            self._presence = PresenceDetector(self.models_dir / presence_file, self._presence.threshold)
+            self.state.presence_model_ready = self._presence.model_path.is_file()
+        if cry_file and self._cry_classifier is not None:
+            self._cry_classifier = CryClassifier(self.models_dir / cry_file)
+            self.state.cry_model_ready = self._cry_classifier.model_path.is_file()
+            await self._stop_cry_monitor()
+            self._cry_monitor = None
+            if self.state.monitoring != MONITOR_OFF:
+                await self._start_cry_monitor()
+        # Keep the configured file names in sync so a restart uses the same files.
+        new_opts = {**self.entry.options}
+        if presence_file:
+            new_opts[CONF_PRESENCE_MODEL] = presence_file
+        if cry_file:
+            new_opts[CONF_CRY_MODEL] = cry_file
+        if new_opts != self.entry.options:
+            self.hass.config_entries.async_update_entry(self.entry, options=new_opts)
 
     # ------------------------------------------------------------------ helpers
     @property
@@ -216,6 +366,7 @@ class BabyCamCoordinator(DataUpdateCoordinator[BabyCamData]):
         return await self.source.async_get_stream_source(mode)
 
     async def async_shutdown(self) -> None:
+        self._cancel_model_schedule()
         self._set_crying(False)
         await self._stop_cry_monitor()
         await super().async_shutdown()

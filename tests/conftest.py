@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Generator
 from unittest.mock import AsyncMock, patch
 
+from aiohttp.resolver import ThreadedResolver
 import pytest
 
 JPEG = b"\xff\xd8\xff\xe0" + b"\x00" * 64 + b"\xff\xd9"
@@ -13,6 +14,13 @@ JPEG = b"\xff\xd8\xff\xe0" + b"\x00" * 64 + b"\xff\xd9"
 @pytest.fixture(autouse=True)
 def auto_enable_custom_integrations(enable_custom_integrations: None) -> None:
     """Enable loading custom_components in tests."""
+
+
+@pytest.fixture(autouse=True)
+def no_dns_resolver_thread() -> Generator[None]:
+    """aiodns spawns a daemon thread per TCPConnector, which trips the lingering-thread check."""
+    with patch("aiohttp.connector.DefaultResolver", ThreadedResolver):
+        yield
 
 
 @pytest.fixture(autouse=True)

@@ -7,6 +7,7 @@ from homeassistant.const import Platform
 DOMAIN = "babycam"
 PLATFORMS: list[Platform] = [
     Platform.BINARY_SENSOR,
+    Platform.BUTTON,
     Platform.CAMERA,
     Platform.NUMBER,
     Platform.SELECT,
@@ -50,6 +51,17 @@ CONF_MEDIA_PLAYERS = "media_players"
 CONF_PRESENCE_MODEL = "presence_model"
 CONF_CRY_MODEL = "cry_model"
 CONF_CONNECTION_TIMEOUT = "connection_timeout"
+CONF_MODEL_DOWNLOAD = "model_download"
+CONF_MODEL_MANIFEST_URL = "model_manifest_url"
+
+# Model download modes (opt-in; default is fully manual)
+MODEL_DOWNLOAD_OFF = "off"
+MODEL_DOWNLOAD_ONCE = "once"
+MODEL_DOWNLOAD_AUTO = "auto"
+MODEL_DOWNLOAD_MODES = [MODEL_DOWNLOAD_OFF, MODEL_DOWNLOAD_ONCE, MODEL_DOWNLOAD_AUTO]
+DEFAULT_MODEL_DOWNLOAD = MODEL_DOWNLOAD_OFF
+DEFAULT_MODEL_MANIFEST_URL = "https://github.com/Mortyr92/babycam/releases/download/models/models.json"
+MODEL_UPDATE_CHECK_INTERVAL_HOURS = 24
 
 # Runtime toggles persisted in entry options by the switch/select/number entities
 OPT_STREAM_MODE = "stream_mode"
@@ -92,11 +104,13 @@ MONITOR_MANUAL = "manual"  # started by user
 SERVICE_START_MONITORING = "start_monitoring"
 SERVICE_STOP_MONITORING = "stop_monitoring"
 SERVICE_CHECK_NOW = "check_now"
+SERVICE_DOWNLOAD_MODELS = "download_models"
 
 # Events
 EVENT_CRY_DETECTED = f"{DOMAIN}_cry_detected"
 EVENT_CONNECTION_LOST = f"{DOMAIN}_connection_lost"
 EVENT_BABY_DETECTED = f"{DOMAIN}_baby_detected"
+EVENT_MODELS_UPDATED = f"{DOMAIN}_models_updated"
 
 # Dispatcher signal
 SIGNAL_UPDATE = f"{DOMAIN}_update_{{}}"

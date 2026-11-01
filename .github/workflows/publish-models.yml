@@ -1,0 +1,57 @@
+name: Publish models
+
+# Builds the ONNX models with scripts/export_models.py and publishes them (plus models.json)
+# as assets of the fixed "models" release. BabyCam's optional downloader reads
+# https://github.com/Mortyr92/babycam/releases/download/models/models.json
+#
+# Run manually from the Actions tab; the version defaults to today's date.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Model set version (defaults to YYYY.M.D)"
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install export tooling
+        run: pip install ultralytics onnx onnxslim tensorflow tensorflow-hub tf2onnx
+
+      - name: Resolve version
+        id: ver
+        run: |
+          v="${{ github.event.inputs.version }}"
+          [ -z "$v" ] && v="$(date -u +%Y.%-m.%-d)"
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+
+      - name: Export models and manifest
+        run: |
+          python scripts/export_models.py --out ./dist \
+            --manifest-version "${{ steps.ver.outputs.version }}" \
+            --manifest-base-url "https://github.com/${{ github.repository }}/releases/download/models"
+          ls -la dist && cat dist/models.json
+
+      - name: Create or update the "models" release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ! gh release view models >/dev/null 2>&1; then
+            gh release create models --title "AI models" \
+              --notes "ONNX models used by BabyCam's optional downloader. Current set: ${{ steps.ver.outputs.version }}"
+          else
+            gh release edit models --notes "ONNX models used by BabyCam's optional downloader. Current set: ${{ steps.ver.outputs.version }}"
+          fi
+          gh release upload models dist/yolov8n.onnx dist/yamnet.onnx dist/models.json --clobber

@@ -9,6 +9,7 @@ from homeassistant.components import frontend, panel_custom
 from homeassistant.components.http import StaticPathConfig
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.typing import ConfigType
 import voluptuous as vol
@@ -45,6 +46,7 @@ from .const import (
     PANEL_URL_PATH,
     PLATFORMS,
     SERVICE_CHECK_NOW,
+    SERVICE_DOWNLOAD_MODELS,
     SERVICE_START_MONITORING,
     SERVICE_STOP_MONITORING,
     SOURCE_ENTITY,
@@ -52,6 +54,7 @@ from .const import (
 )
 from .coordinator import BabyCamCoordinator
 from .http import BabyCamAudioView
+from .model_downloader import ModelDownloadError
 from .websocket_api import async_register_websocket_api
 
 _LOGGER = logging.getLogger(__name__)
@@ -61,6 +64,7 @@ CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 type BabyCamConfigEntry = ConfigEntry[BabyCamCoordinator]
 
 SERVICE_SCHEMA = vol.Schema({vol.Optional("entry_id"): cv.string})
+DOWNLOAD_SCHEMA = SERVICE_SCHEMA.extend({vol.Optional("force", default=False): cv.boolean})
 
 
 def build_source(hass: HomeAssistant, data: dict) -> CameraSource:
@@ -123,7 +127,18 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 
     hass.services.async_register(DOMAIN, SERVICE_START_MONITORING, _start, schema=SERVICE_SCHEMA)
     hass.services.async_register(DOMAIN, SERVICE_STOP_MONITORING, _stop, schema=SERVICE_SCHEMA)
+    async def _download(call: ServiceCall) -> None:
+        errors = []
+        for coordinator in _coordinators(call):
+            try:
+                await coordinator.async_download_models(force=call.data["force"])
+            except ModelDownloadError as err:
+                errors.append(str(err))
+        if errors:
+            raise HomeAssistantError("; ".join(errors))
+
     hass.services.async_register(DOMAIN, SERVICE_CHECK_NOW, _check, schema=SERVICE_SCHEMA)
+    hass.services.async_register(DOMAIN, SERVICE_DOWNLOAD_MODELS, _download, schema=DOWNLOAD_SCHEMA)
     return True
 
 

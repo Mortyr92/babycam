@@ -12,6 +12,7 @@ import voluptuous as vol
 
 from .const import DOMAIN, MONITOR_MANUAL, OPT_STREAM_MODE, SIGNAL_UPDATE, STREAM_MODES
 from .coordinator import BabyCamCoordinator
+from .model_downloader import ModelDownloadError
 
 
 @callback
@@ -22,6 +23,7 @@ def async_register_websocket_api(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_stop)
     websocket_api.async_register_command(hass, ws_check_now)
     websocket_api.async_register_command(hass, ws_set_stream_mode)
+    websocket_api.async_register_command(hass, ws_download_models)
 
 
 def _coordinator(hass: HomeAssistant, entry_id: str) -> BabyCamCoordinator | None:
@@ -135,3 +137,22 @@ def ws_set_stream_mode(
         return
     coordinator.async_update_option(OPT_STREAM_MODE, msg["mode"])
     connection.send_result(msg["id"])
+
+
+@websocket_api.websocket_command(
+    {vol.Required("type"): f"{DOMAIN}/download_models", vol.Required("entry_id"): str}
+)
+@websocket_api.async_response
+async def ws_download_models(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict
+) -> None:
+    coordinator = _coordinator(hass, msg["entry_id"])
+    if coordinator is None:
+        connection.send_error(msg["id"], websocket_api.ERR_NOT_FOUND, "Unknown entry")
+        return
+    try:
+        await coordinator.async_download_models()
+    except ModelDownloadError as err:
+        connection.send_error(msg["id"], "download_failed", str(err))
+        return
+    connection.send_result(msg["id"], _payload(hass, coordinator))

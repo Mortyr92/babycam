@@ -54,12 +54,19 @@
           "notify_services": "Notification services",
           "media_players": "Media players for the audio stream",
           "presence_model": "Presence model file (in config/babycam/models)",
-          "cry_model": "Cry model file (in config/babycam/models)"
+          "cry_model": "Cry model file (in config/babycam/models)",
+          "model_download": "Model download",
+          "model_manifest_url": "Model manifest URL"
+        },
+        "data_description": {
+          "model_download": "Off: you place the ONNX files in config/babycam/models yourself (nothing is ever downloaded). Download once: fetch missing models a single time. Download and keep updated: also check daily for newer models.",
+          "model_manifest_url": "Where the models.json manifest is fetched from. Default is the 'models' release of the BabyCam GitHub repository."
         }
       }
     },
     "error": {
-      "invalid_roi": "The region must be four numbers between 0 and 1: x1,y1,x2,y2"
+      "invalid_roi": "The region must be four numbers between 0 and 1: x1,y1,x2,y2",
+      "invalid_url": "The manifest URL must start with http:// or https://"
     }
   },
   "selector": {
@@ -68,44 +75,102 @@
         "entity": "Existing Home Assistant camera entity",
         "reolink": "Reolink camera (direct, local)"
       }
+    },
+    "model_download": {
+      "options": {
+        "off": "Off – manual (fully offline)",
+        "once": "Download once (no update checks)",
+        "auto": "Download and keep updated (daily check)"
+      }
     }
   },
   "entity": {
     "binary_sensor": {
-      "baby_in_bed": { "name": "Baby in bed" },
-      "crying": { "name": "Crying" },
-      "connection_alarm": { "name": "Connection alarm" },
-      "camera_online": { "name": "Camera online" },
-      "monitoring": { "name": "Monitoring" }
+      "baby_in_bed": {
+        "name": "Baby in bed"
+      },
+      "crying": {
+        "name": "Crying"
+      },
+      "connection_alarm": {
+        "name": "Connection alarm"
+      },
+      "camera_online": {
+        "name": "Camera online"
+      },
+      "monitoring": {
+        "name": "Monitoring"
+      }
     },
     "sensor": {
       "monitoring_mode": {
         "name": "Monitoring mode",
-        "state": { "off": "Off", "auto": "Automatic", "manual": "Manual" }
+        "state": {
+          "off": "Off",
+          "auto": "Automatic",
+          "manual": "Manual"
+        }
       },
-      "presence_confidence": { "name": "Presence confidence" },
-      "cry_score": { "name": "Cry score" },
-      "last_snapshot": { "name": "Last snapshot" }
+      "presence_confidence": {
+        "name": "Presence confidence"
+      },
+      "cry_score": {
+        "name": "Cry score"
+      },
+      "last_snapshot": {
+        "name": "Last snapshot"
+      },
+      "models_version": {
+        "name": "Models version"
+      }
     },
     "switch": {
-      "monitor": { "name": "Monitor" },
-      "ai_detection": { "name": "AI presence detection" },
-      "cry_detection": { "name": "Cry detection" },
-      "notifications": { "name": "Notifications" }
+      "monitor": {
+        "name": "Monitor"
+      },
+      "ai_detection": {
+        "name": "AI presence detection"
+      },
+      "cry_detection": {
+        "name": "Cry detection"
+      },
+      "notifications": {
+        "name": "Notifications"
+      }
     },
     "select": {
       "stream_mode": {
         "name": "View mode",
-        "state": { "snapshots": "Snapshots", "low": "Low definition", "high": "High definition" }
+        "state": {
+          "snapshots": "Snapshots",
+          "low": "Low definition",
+          "high": "High definition"
+        }
       }
     },
     "number": {
-      "snapshot_interval": { "name": "Snapshot interval" },
-      "detection_threshold": { "name": "Presence threshold" },
-      "cry_threshold": { "name": "Cry threshold" }
+      "snapshot_interval": {
+        "name": "Snapshot interval"
+      },
+      "detection_threshold": {
+        "name": "Presence threshold"
+      },
+      "cry_threshold": {
+        "name": "Cry threshold"
+      }
     },
     "camera": {
-      "live": { "name": "Live" }
+      "live": {
+        "name": "Live"
+      }
+    },
+    "button": {
+      "check_now": {
+        "name": "Check now"
+      },
+      "download_models": {
+        "name": "Download / update models"
+      }
     }
   },
   "services": {
@@ -113,21 +178,44 @@
       "name": "Start monitoring",
       "description": "Manually start monitoring (audio stream, cry detection, connection alarm).",
       "fields": {
-        "entry_id": { "name": "Entry", "description": "Config entry ID. Leave empty for all BabyCam entries." }
+        "entry_id": {
+          "name": "Entry",
+          "description": "Config entry ID. Leave empty for all BabyCam entries."
+        }
       }
     },
     "stop_monitoring": {
       "name": "Stop monitoring",
       "description": "Stop monitoring.",
       "fields": {
-        "entry_id": { "name": "Entry", "description": "Config entry ID. Leave empty for all BabyCam entries." }
+        "entry_id": {
+          "name": "Entry",
+          "description": "Config entry ID. Leave empty for all BabyCam entries."
+        }
       }
     },
     "check_now": {
       "name": "Check now",
       "description": "Take a snapshot and run the presence detection immediately.",
       "fields": {
-        "entry_id": { "name": "Entry", "description": "Config entry ID. Leave empty for all BabyCam entries." }
+        "entry_id": {
+          "name": "Entry",
+          "description": "Config entry ID. Leave empty for all BabyCam entries."
+        }
+      }
+    },
+    "download_models": {
+      "name": "Download models",
+      "description": "Download missing or updated AI models from the configured manifest (only if you opted in to downloads, or when called explicitly).",
+      "fields": {
+        "entry_id": {
+          "name": "Entry",
+          "description": "Config entry ID. Leave empty for all BabyCam entries."
+        },
+        "force": {
+          "name": "Force",
+          "description": "Re-download all models even if they are up to date."
+        }
       }
     }
   }

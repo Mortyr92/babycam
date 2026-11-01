@@ -28,6 +28,8 @@ from .const import (
     CONF_DETECTION_THRESHOLD,
     CONF_HOST,
     CONF_MEDIA_PLAYERS,
+    CONF_MODEL_DOWNLOAD,
+    CONF_MODEL_MANIFEST_URL,
     CONF_NOTIFY_SERVICES,
     CONF_PASSWORD,
     CONF_PORT,
@@ -47,6 +49,8 @@ from .const import (
     DEFAULT_CRY_MODEL,
     DEFAULT_CRY_THRESHOLD,
     DEFAULT_DETECTION_THRESHOLD,
+    DEFAULT_MODEL_DOWNLOAD,
+    DEFAULT_MODEL_MANIFEST_URL,
     DEFAULT_PORT,
     DEFAULT_PRESENCE_MODEL,
     DEFAULT_ROI,
@@ -57,6 +61,7 @@ from .const import (
     DOMAIN,
     MAX_SNAPSHOT_INTERVAL,
     MIN_SNAPSHOT_INTERVAL,
+    MODEL_DOWNLOAD_MODES,
     SOURCE_ENTITY,
     SOURCE_REOLINK,
 )
@@ -193,7 +198,9 @@ class BabyCamOptionsFlow(OptionsFlow):
                 parse_roi(user_input[CONF_ROI])
             except ValueError:
                 errors[CONF_ROI] = "invalid_roi"
-            else:
+            if not user_input[CONF_MODEL_MANIFEST_URL].startswith(("http://", "https://")):
+                errors[CONF_MODEL_MANIFEST_URL] = "invalid_url"
+            if not errors:
                 return self.async_create_entry(data={**self.config_entry.options, **user_input})
 
         opts = {**self.config_entry.options}
@@ -237,6 +244,19 @@ class BabyCamOptionsFlow(OptionsFlow):
                     CONF_PRESENCE_MODEL, default=opts.get(CONF_PRESENCE_MODEL, DEFAULT_PRESENCE_MODEL)
                 ): str,
                 vol.Required(CONF_CRY_MODEL, default=opts.get(CONF_CRY_MODEL, DEFAULT_CRY_MODEL)): str,
+                vol.Required(
+                    CONF_MODEL_DOWNLOAD, default=opts.get(CONF_MODEL_DOWNLOAD, DEFAULT_MODEL_DOWNLOAD)
+                ): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=MODEL_DOWNLOAD_MODES,
+                        translation_key="model_download",
+                        mode=selector.SelectSelectorMode.DROPDOWN,
+                    )
+                ),
+                vol.Required(
+                    CONF_MODEL_MANIFEST_URL,
+                    default=opts.get(CONF_MODEL_MANIFEST_URL, DEFAULT_MODEL_MANIFEST_URL),
+                ): str,
             }
         )
         return self.async_show_form(step_id="init", data_schema=schema, errors=errors)

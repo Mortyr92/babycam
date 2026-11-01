@@ -18,9 +18,33 @@ from this repository or from Home Assistant ever leaves your network at runtime.
 from __future__ import annotations
 
 import argparse
+import hashlib
+import json
 from pathlib import Path
 import shutil
 import sys
+
+MODEL_FILES = {"presence": "yolov8n.onnx", "cry": "yamnet.onnx"}
+
+
+def sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as fh:
+        for block in iter(lambda: fh.read(1 << 16), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def write_manifest(out: Path, version: str, base_url: str) -> None:
+    """Write models.json so BabyCam's optional downloader can fetch and verify these files."""
+    models = {
+        key: {"file": name, "url": f"{base_url.rstrip('/')}/{name}", "sha256": sha256(out / name)}
+        for key, name in MODEL_FILES.items()
+        if (out / name).is_file()
+    }
+    manifest = {"version": version, "models": models}
+    (out / "models.json").write_text(json.dumps(manifest, indent=2) + "\n")
+    print(f"wrote {out / 'models.json'} (version {version})")
 
 
 def export_yolo(out: Path) -> None:
@@ -59,6 +83,12 @@ def main() -> int:
     parser.add_argument("--out", type=Path, default=Path("models"))
     parser.add_argument("--skip-yolo", action="store_true")
     parser.add_argument("--skip-yamnet", action="store_true")
+    parser.add_argument("--manifest-version", help="Also write models.json with this version string")
+    parser.add_argument(
+        "--manifest-base-url",
+        default="https://github.com/Mortyr92/babycam/releases/download/models",
+        help="URL prefix the model files will be served from (used in models.json)",
+    )
     args = parser.parse_args()
     args.out.mkdir(parents=True, exist_ok=True)
 
@@ -66,6 +96,8 @@ def main() -> int:
         export_yolo(args.out)
     if not args.skip_yamnet:
         export_yamnet(args.out)
+    if args.manifest_version:
+        write_manifest(args.out, args.manifest_version, args.manifest_base_url)
     return 0
 
 

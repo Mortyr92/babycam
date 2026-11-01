@@ -4,7 +4,8 @@
 
 BabyCam turns a local IP camera (built and tested around the **Reolink E1 Pro**) into a baby monitor
 inside Home Assistant. Everything runs on your own hardware: snapshots, AI detection, audio and video
-never leave your network. There is no cloud account, no telemetry and no runtime download.
+never leave your network. There is no cloud account and no telemetry. By default nothing is
+downloaded at runtime either; an **opt‑in** model downloader is available if you prefer convenience.
 
 ## Features
 
@@ -41,18 +42,39 @@ Copy `custom_components/babycam` into `<config>/custom_components/` and restart.
 `ffmpeg` must be available (it is on Home Assistant OS/Container). The Python requirements
 (`onnxruntime`, `numpy`, `Pillow`) are installed automatically by Home Assistant on first start.
 
-## Models (one‑time, offline)
+## Models
 
-BabyCam never downloads anything by itself. Put the two ONNX models into
-`<config>/babycam/models/` (the folder is created on first start):
+BabyCam needs two ONNX models in `<config>/babycam/models/` (the folder is created on first start):
 
 | File           | Purpose                       | Size   |
 | -------------- | ----------------------------- | ------ |
 | `yolov8n.onnx` | presence (person) detection   | ~13 MB |
 | `yamnet.onnx`  | cry detection (optional)      | ~15 MB |
 
-Create them on any PC with the bundled script (this is the only step that touches the internet,
-and it happens on your PC, not in Home Assistant):
+### Option A – let Home Assistant download them (no PC needed)
+
+Open the integration **options → Model download** and pick:
+
+| Mode             | Behaviour                                                                      |
+| ---------------- | ------------------------------------------------------------------------------ |
+| `off` (default)  | Never downloads anything. You provide the files yourself (option B).           |
+| `once`           | Downloads missing models a single time, then never contacts the internet again.|
+| `auto`           | Downloads missing models and checks the manifest once a day for updates.       |
+
+The models come from this repository's `models` release
+(`https://github.com/Mortyr92/babycam/releases/download/models/models.json`); every file is
+verified with SHA‑256 before it is installed. The URL can be changed in the options if you want to
+host the manifest on your own server. You can also trigger a download/update any time with the
+**Download / update models** button (panel, `button.<name>_download_models` or
+`babycam.download_models`). `sensor.<name>_models_version` shows the installed version and
+whether an update is available.
+
+The release itself is built by the **Publish models** GitHub Actions workflow in this repository,
+so no local export is ever required.
+
+### Option B – offline, on your own PC
+
+Create the files on any PC with the bundled script and copy them over:
 
 ```bash
 pip install ultralytics tensorflow tensorflow-hub tf2onnx
@@ -102,10 +124,14 @@ export must accept a float32 16 kHz waveform and output the 521 AudioSet scores.
 | `number.<name>_presence_threshold`    | 0 – 1                                                         |
 | `number.<name>_cry_threshold`         | 0 – 1                                                         |
 | `camera.<name>_live`                  | live camera (MJPEG/HLS in the selected quality)               |
+| `button.<name>_check_now`             | take a snapshot and run detection now                         |
+| `button.<name>_download_models`       | download / update models (respects the manifest URL)          |
+| `sensor.<name>_models_version`        | installed model version, `manual` if self-provided            |
 
 ### Services
 
-- `babycam.start_monitoring` / `babycam.stop_monitoring` / `babycam.check_now` (optional `entry_id`).
+- `babycam.start_monitoring` / `babycam.stop_monitoring` / `babycam.check_now` /
+  `babycam.download_models` (optional `entry_id`; `download_models` also accepts `force`).
 
 ### Events
 
@@ -135,7 +161,9 @@ action:
 
 - All processing (snapshots, ONNX inference, audio transcoding) happens inside Home Assistant.
 - The panel is plain JavaScript served by Home Assistant – no CDN, no external fonts or scripts.
-- No model or asset is fetched at runtime; the only outbound traffic is to your camera.
+- Nothing is fetched at runtime unless you enable **Model download** (`once`/`auto`), in which case
+  the only extra traffic is to the model manifest URL (GitHub by default). Otherwise the only
+  outbound traffic is to your camera.
 
 ## Development
 

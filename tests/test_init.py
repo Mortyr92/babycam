@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+from datetime import timedelta
 from unittest.mock import AsyncMock, patch
 
 from homeassistant.core import HomeAssistant
-from pytest_homeassistant_custom_component.common import MockConfigEntry
+from homeassistant.exceptions import HomeAssistantError
+from homeassistant.util import dt as dt_util
+import pytest
+from pytest_homeassistant_custom_component.common import MockConfigEntry, async_fire_time_changed
 
 from custom_components.babycam.camera_client import CameraError
 from custom_components.babycam.const import (
@@ -23,6 +27,7 @@ from custom_components.babycam.const import (
 )
 from custom_components.babycam.coordinator import BabyCamCoordinator
 from custom_components.babycam.detector import PresenceResult
+from custom_components.babycam.model_downloader import DownloadResult, ModelDownloadError
 
 from .conftest import JPEG
 
@@ -167,3 +172,75 @@ async def test_options_apply_without_reload(hass: HomeAssistant, mock_snapshot: 
 
     assert await hass.config_entries.async_unload(entry.entry_id)
     assert mock_snapshot.return_value == JPEG
+
+
+async def test_model_download_off_never_downloads(hass: HomeAssistant, mock_snapshot: AsyncMock) -> None:
+    entry = await _setup(hass)
+    coordinator: BabyCamCoordinator = entry.runtime_data
+    with patch.object(coordinator, "async_download_models", AsyncMock()) as dl:
+        async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=10))
+        await hass.async_block_till_done()
+        async_fire_time_changed(hass, dt_util.utcnow() + timedelta(days=2))
+        await hass.async_block_till_done()
+    dl.assert_not_called()
+    assert hass.states.get("sensor.babycam_test_models_version").state == "manual"
+    assert hass.states.get("button.babycam_test_download_update_models") is not None
+
+
+async def test_model_download_once(hass: HomeAssistant, mock_snapshot: AsyncMock) -> None:
+    entry = await _setup(hass, {"model_download": "once"})
+    coordinator: BabyCamCoordinator = entry.runtime_data
+    result = DownloadResult("1", ["presence", "cry"], {"presence": "yolov8n.onnx", "cry": "yamnet.onnx"})
+
+    with patch(
+        "custom_components.babycam.coordinator.ModelDownloader.async_update", AsyncMock(return_value=result)
+    ) as upd:
+        async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=10))
+        await hass.async_block_till_done()
+        assert upd.await_count == 1
+        assert coordinator.state.models_version == "1"
+        assert hass.states.get("sensor.babycam_test_models_version").state == "1"
+
+        # Models are now "ready" -> no further checks, not even a day later.
+        coordinator.state.presence_model_ready = True
+        coordinator.state.cry_model_ready = True
+        async_fire_time_changed(hass, dt_util.utcnow() + timedelta(days=2))
+        await hass.async_block_till_done()
+        assert upd.await_count == 1
+
+
+async def test_model_download_auto_checks_daily_and_reloads(
+    hass: HomeAssistant, mock_snapshot: AsyncMock
+) -> None:
+    entry = await _setup(hass, {"model_download": "auto", "presence_model": "old.onnx"})
+    coordinator: BabyCamCoordinator = entry.runtime_data
+    result = DownloadResult("5", ["presence"], {"presence": "yolov8n.onnx", "cry": "yamnet.onnx"})
+    events = []
+    hass.bus.async_listen(f"{DOMAIN}_models_updated", lambda e: events.append(e))
+
+    with patch(
+        "custom_components.babycam.coordinator.ModelDownloader.async_update", AsyncMock(return_value=result)
+    ) as upd:
+        async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=10))
+        await hass.async_block_till_done()
+        assert upd.await_count == 1
+        async_fire_time_changed(hass, dt_util.utcnow() + timedelta(hours=25))
+        await hass.async_block_till_done()
+        assert upd.await_count == 2
+
+    assert events and events[0].data["version"] == "5"
+    # Detector now points at the downloaded file and the option was persisted.
+    assert coordinator._presence.model_path.name == "yolov8n.onnx"
+    assert entry.options["presence_model"] == "yolov8n.onnx"
+
+
+async def test_download_service_reports_errors(hass: HomeAssistant, mock_snapshot: AsyncMock) -> None:
+    await _setup(hass)
+    with (
+        patch(
+            "custom_components.babycam.coordinator.ModelDownloader.async_update",
+            AsyncMock(side_effect=ModelDownloadError("nope")),
+        ),
+        pytest.raises(HomeAssistantError, match="nope"),
+    ):
+        await hass.services.async_call(DOMAIN, "download_models", {}, blocking=True)

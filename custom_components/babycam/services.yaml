@@ -19,3 +19,15 @@ check_now:
       selector:
         config_entry:
           integration: babycam
+download_models:
+  fields:
+    entry_id:
+      required: false
+      selector:
+        config_entry:
+          integration: babycam
+    force:
+      required: false
+      default: false
+      selector:
+        boolean:
