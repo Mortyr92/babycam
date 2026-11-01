@@ -1,0 +1,21 @@
+start_monitoring:
+  fields:
+    entry_id:
+      required: false
+      selector:
+        config_entry:
+          integration: babycam
+stop_monitoring:
+  fields:
+    entry_id:
+      required: false
+      selector:
+        config_entry:
+          integration: babycam
+check_now:
+  fields:
+    entry_id:
+      required: false
+      selector:
+        config_entry:
+          integration: babycam

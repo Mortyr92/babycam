@@ -1,0 +1,13 @@
+{
+  "domain": "babycam",
+  "name": "BabyCam",
+  "codeowners": ["@Mortyr92"],
+  "config_flow": true,
+  "dependencies": ["camera", "ffmpeg", "frontend", "http", "panel_custom", "websocket_api"],
+  "documentation": "https://github.com/Mortyr92/babycam",
+  "integration_type": "device",
+  "iot_class": "local_polling",
+  "issue_tracker": "https://github.com/Mortyr92/babycam/issues",
+  "requirements": ["onnxruntime>=1.16.0", "numpy>=1.24.0", "Pillow>=10.0.0"],
+  "version": "0.1.0"
+}

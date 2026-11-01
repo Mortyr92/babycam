@@ -1,0 +1,134 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Choose the camera source",
+        "data": {
+          "source_type": "Camera source"
+        }
+      },
+      "entity": {
+        "title": "Select the camera entity",
+        "description": "Pick the camera that is pointed at the bed, e.g. the Reolink E1 Pro from the Reolink integration.",
+        "data": {
+          "camera_entity": "Camera"
+        }
+      },
+      "reolink": {
+        "title": "Connect to a Reolink camera",
+        "description": "Direct connection to a Reolink camera (tested with the E1 Pro). Everything stays on your local network.",
+        "data": {
+          "host": "Host / IP address",
+          "username": "Username",
+          "password": "Password",
+          "port": "HTTP(S) port",
+          "use_https": "Use HTTPS",
+          "rtsp_port": "RTSP port",
+          "channel": "Channel",
+          "stream_main": "Main stream path (high definition)",
+          "stream_sub": "Sub stream path (low definition)"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Could not fetch a snapshot from the camera",
+      "invalid_auth": "The camera rejected the credentials"
+    },
+    "abort": {
+      "already_configured": "This camera is already configured"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "BabyCam options",
+        "data": {
+          "snapshot_interval": "Seconds between snapshots",
+          "detection_threshold": "Presence confidence threshold (0-1)",
+          "absence_grace": "Consecutive empty snapshots before 'not in bed'",
+          "roi": "Bed region of interest: x1,y1,x2,y2 (fractions of the frame)",
+          "connection_timeout": "Seconds without a snapshot before the connection alarm",
+          "cry_detection": "Enable cry detection",
+          "cry_threshold": "Cry probability threshold (0-1)",
+          "cry_cooldown": "Seconds between cry notifications",
+          "notify_services": "Notification services",
+          "media_players": "Media players for the audio stream",
+          "presence_model": "Presence model file (in config/babycam/models)",
+          "cry_model": "Cry model file (in config/babycam/models)"
+        }
+      }
+    },
+    "error": {
+      "invalid_roi": "The region must be four numbers between 0 and 1: x1,y1,x2,y2"
+    }
+  },
+  "selector": {
+    "source_type": {
+      "options": {
+        "entity": "Existing Home Assistant camera entity",
+        "reolink": "Reolink camera (direct, local)"
+      }
+    }
+  },
+  "entity": {
+    "binary_sensor": {
+      "baby_in_bed": { "name": "Baby in bed" },
+      "crying": { "name": "Crying" },
+      "connection_alarm": { "name": "Connection alarm" },
+      "camera_online": { "name": "Camera online" },
+      "monitoring": { "name": "Monitoring" }
+    },
+    "sensor": {
+      "monitoring_mode": {
+        "name": "Monitoring mode",
+        "state": { "off": "Off", "auto": "Automatic", "manual": "Manual" }
+      },
+      "presence_confidence": { "name": "Presence confidence" },
+      "cry_score": { "name": "Cry score" },
+      "last_snapshot": { "name": "Last snapshot" }
+    },
+    "switch": {
+      "monitor": { "name": "Monitor" },
+      "ai_detection": { "name": "AI presence detection" },
+      "cry_detection": { "name": "Cry detection" },
+      "notifications": { "name": "Notifications" }
+    },
+    "select": {
+      "stream_mode": {
+        "name": "View mode",
+        "state": { "snapshots": "Snapshots", "low": "Low definition", "high": "High definition" }
+      }
+    },
+    "number": {
+      "snapshot_interval": { "name": "Snapshot interval" },
+      "detection_threshold": { "name": "Presence threshold" },
+      "cry_threshold": { "name": "Cry threshold" }
+    },
+    "camera": {
+      "live": { "name": "Live" }
+    }
+  },
+  "services": {
+    "start_monitoring": {
+      "name": "Start monitoring",
+      "description": "Manually start monitoring (audio stream, cry detection, connection alarm).",
+      "fields": {
+        "entry_id": { "name": "Entry", "description": "Config entry ID. Leave empty for all BabyCam entries." }
+      }
+    },
+    "stop_monitoring": {
+      "name": "Stop monitoring",
+      "description": "Stop monitoring.",
+      "fields": {
+        "entry_id": { "name": "Entry", "description": "Config entry ID. Leave empty for all BabyCam entries." }
+      }
+    },
+    "check_now": {
+      "name": "Check now",
+      "description": "Take a snapshot and run the presence detection immediately.",
+      "fields": {
+        "entry_id": { "name": "Entry", "description": "Config entry ID. Leave empty for all BabyCam entries." }
+      }
+    }
+  }
+}

@@ -1,0 +1,7 @@
+pytest-homeassistant-custom-component
+ruff
+onnxruntime
+numpy
+Pillow
+haffmpeg
+home-assistant-frontend
